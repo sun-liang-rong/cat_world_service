@@ -11,7 +11,7 @@ cp .env.example .env
 npm run start:dev
 ```
 
-默认端口 `3000`，接口前缀 `/api`。
+端口由环境变量 `PORT` 配置，未设置时默认 `3000`。接口前缀 `/api`。
 
 健康检查：
 
