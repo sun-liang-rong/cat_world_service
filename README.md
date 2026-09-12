@@ -1,6 +1,6 @@
 # cat-world-service
 
-《喵喵小镇》后端服务。NestJS + TypeORM + MySQL，框架保持精简，业务模块按后续需求再加。
+《猫爪星球奇遇记》后端服务。NestJS + TypeORM + MySQL，框架保持精简，业务模块按后续需求再加。
 
 ## 启动
 
