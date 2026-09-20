@@ -8,6 +8,7 @@ import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { HealthController } from './health/health.controller';
 import { RankModule } from './rank/rank.module';
+import { TrackModule } from './track/track.module';
 import { UserModule } from './user/user.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { UserModule } from './user/user.module';
     }),
     UserModule,
     RankModule,
+    TrackModule,
   ],
   controllers: [HealthController],
   providers: [

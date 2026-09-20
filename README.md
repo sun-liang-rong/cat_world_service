@@ -44,6 +44,39 @@ curl -X POST http://localhost:3000/api/rank/submit \
   -d '{"user_id":"K7M2P9QX","type":3,"date":"2026-09-09","duration_ms":92000}'
 ```
 
+上报埋点（批量，单次最多 50 条；未知事件名会被丢弃，不报错）：
+
+```bash
+curl -X POST http://localhost:3000/api/track \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "user_id":"K7M2P9QX",
+    "session_id":"sess_demo",
+    "platform":"preview",
+    "app_version":"1.0.0",
+    "events":[
+      {"event_id":"e1","name":"app_launch","ts":1758350000000,"props":{"is_new_user":true}},
+      {"event_id":"e2","name":"level_start","ts":1758350001800,"props":{"mode":"main","level":1}}
+    ]
+  }'
+```
+
+P0 事件名：`app_launch` `loading_finish` `page_view` `level_enter_click` `level_start` `level_end` `level_next` `level_replay` `level_home` `level_go_build` `tutorial_done` `ad_entrance_show` `ad_click` `ad_result` `building_light` `shop_buy`。
+
+查询埋点看板（只读聚合，不返回玩家进度；默认最近 7 天，最长 31 天。若配置了 `DASHBOARD_TOKEN`，需带 `X-Dashboard-Token`）。可视化页面在仓库 `web/`：`cd web && npm install && npm run dev`，开发环境代理到本服务 `/api`。
+
+```bash
+# 一次拉齐总览 / 漏斗 / 关卡 / 广告 / 页面
+curl 'http://localhost:3000/api/track/dashboard?from=2026-09-14&to=2026-09-20&platform=all&mode=all'
+
+# 也可分接口拉
+curl 'http://localhost:3000/api/track/overview?platform=wechat'
+curl 'http://localhost:3000/api/track/funnel?mode=main'
+curl 'http://localhost:3000/api/track/levels'
+curl 'http://localhost:3000/api/track/ads'
+curl 'http://localhost:3000/api/track/pages'
+```
+
 查询排行榜：
 
 ```bash
@@ -62,5 +95,6 @@ curl 'http://localhost:3000/api/rank/list?type=3&date=2026-09-09&user_id=K7M2P9Q
 - 表前缀：`cat_world_`
 - 用户表：`cat_world_user`（主键、用户 ID、名称）
 - 排行榜表：`cat_world_rank`（用户 ID + 榜单类型 + 日期唯一；关卡/无尽日期为空，超萌挑战按天存）
+- 埋点表：`cat_world_track_event`（按 `event_id` 去重；只存分析事件，不存玩家进度）
 - 连接信息写在 `.env`（参考 `.env.example`）
 - 开发期 `DB_SYNC=true`，后续有表结构后再关掉
