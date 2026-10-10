@@ -5,6 +5,8 @@ import { QueryTrackDto } from './dto/query-track.dto';
 import { TrackEvent } from './entities/track-event.entity';
 import {
   DayUser,
+  addDays,
+  shanghaiYmd,
   FUNNEL_STEPS,
   FunnelStepDef,
   TrackQueryRange,
@@ -130,7 +132,24 @@ export interface TrackPagesResult {
   };
 }
 
+export interface TrackCohortRow {
+  day: string;
+  new_users: number;
+  d1: number | null;
+  d3: number | null;
+  d7: number | null;
+  start_2: number;
+  clear_5: number;
+  clear_20: number;
+}
+
+export interface TrackCohortsResult {
+  observed_through: string;
+  rows: TrackCohortRow[];
+}
+
 export interface TrackDashboardResult {
+  cohorts: TrackCohortsResult;
   overview: TrackOverviewResult;
   funnel: TrackFunnelResult;
   levels: TrackLevelsResult;
@@ -167,14 +186,56 @@ export class TrackDashboardService {
 
   async dashboard(dto: QueryTrackDto): Promise<TrackDashboardResult> {
     const range = resolveTrackQuery(dto);
-    const [overview, funnel, levels, ads, pages] = await Promise.all([
+    const [overview, funnel, levels, ads, pages, cohorts] = await Promise.all([
       this.buildOverview(range),
       this.buildFunnel(range),
       this.buildLevels(range),
       this.buildAds(range),
       this.buildPages(range),
+      this.buildCohorts(range),
     ]);
-    return { overview, funnel, levels, ads, pages };
+    return { overview, funnel, levels, ads, pages, cohorts };
+  }
+
+  private async buildCohorts(range: TrackQueryRange): Promise<TrackCohortsResult> {
+    // 首次启动按全历史取 MIN，避免把区间前已来过的玩家算成新用户。
+    // 同一个匿名 ID 的不同平台分别成组；mode 过滤不改变启动留存口径。
+    const platformClause = range.platform === 'all' ? '' : 'AND platform = ?';
+    const values: unknown[] = range.platform === 'all' ? [] : [range.platform];
+    const rows = await this.query<SqlRow>(`
+      SELECT DATE_FORMAT(c.first_seen, '%Y-%m-%d') AS day,
+        COUNT(DISTINCT c.platform, c.user_id) AS new_users,
+        COUNT(DISTINCT CASE WHEN e.name = 'app_launch' AND DATEDIFF(e.event_time, c.first_seen) = 1 THEN CONCAT(c.platform, ':', c.user_id) END) AS retained_1,
+        COUNT(DISTINCT CASE WHEN e.name = 'app_launch' AND DATEDIFF(e.event_time, c.first_seen) = 3 THEN CONCAT(c.platform, ':', c.user_id) END) AS retained_3,
+        COUNT(DISTINCT CASE WHEN e.name = 'app_launch' AND DATEDIFF(e.event_time, c.first_seen) = 7 THEN CONCAT(c.platform, ':', c.user_id) END) AS retained_7,
+        COUNT(DISTINCT CASE WHEN e.name = 'level_start' AND JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.mode')) = 'main' AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.level')) AS UNSIGNED) = 2 THEN CONCAT(c.platform, ':', c.user_id) END) AS start_2,
+        COUNT(DISTINCT CASE WHEN e.name = 'level_end' AND JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.mode')) = 'main' AND JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.result')) = 'win' AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.level')) AS UNSIGNED) = 5 THEN CONCAT(c.platform, ':', c.user_id) END) AS clear_5,
+        COUNT(DISTINCT CASE WHEN e.name = 'level_end' AND JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.mode')) = 'main' AND JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.result')) = 'win' AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.props, '$.level')) AS UNSIGNED) = 20 THEN CONCAT(c.platform, ':', c.user_id) END) AS clear_20
+      FROM (
+        SELECT user_id, platform, MIN(event_time) AS first_seen
+        FROM cat_world_track_event
+        WHERE name = 'app_launch' AND user_id <> '' ${platformClause}
+        GROUP BY user_id, platform HAVING first_seen >= ? AND first_seen < ?
+      ) c
+      LEFT JOIN cat_world_track_event e ON e.user_id = c.user_id AND e.platform = c.platform
+        AND e.event_time >= c.first_seen AND e.event_time < ?
+      GROUP BY DATE_FORMAT(c.first_seen, '%Y-%m-%d') ORDER BY day`,
+      [...values, range.fromStart, range.toExclusive, range.toExclusive],
+    );
+    const yesterday = addDays(shanghaiYmd(), -1);
+    const observedThrough = range.to < yesterday ? range.to : yesterday;
+    return {
+      observed_through: observedThrough,
+      rows: rows.map(row => {
+        const day = toDayString(row.day);
+        const total = toNumber(row.new_users);
+        const retention = (offset: number) => addDays(day, offset) <= observedThrough
+          ? ratio(toNumber(row[`retained_${offset}`]), total) : null;
+        return { day, new_users: total, d1: retention(1), d3: retention(3), d7: retention(7),
+          start_2: ratio(toNumber(row.start_2), total), clear_5: ratio(toNumber(row.clear_5), total),
+          clear_20: ratio(toNumber(row.clear_20), total) };
+      }),
+    };
   }
 
   private async buildOverview(

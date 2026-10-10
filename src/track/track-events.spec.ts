@@ -12,28 +12,32 @@ describe('track event helpers', () => {
     expect(isTrackEventName('')).toBe(false);
   });
 
-  it('keeps primitive props and short string arrays', () => {
+  it('keeps only event schema keys and matching types', () => {
     expect(
       sanitizeTrackProps({
-        page_id: 'home',
+        mode: 'main',
+        coins: 9999,
+        cats: { orange: true },
         duration_ms: 1200,
-        win: true,
-        used_items: ['hammer', 'dice'],
+          used_items: ['hammer', 'dice'],
         nested: { skip: true },
-        empty: null,
-      }),
+        }, 'level_end'),
     ).toEqual({
-      page_id: 'home',
+      mode: 'main',
       duration_ms: 1200,
-      win: true,
       used_items: ['hammer', 'dice'],
-      empty: null,
     });
   });
 
   it('drops invalid prop containers', () => {
-    expect(sanitizeTrackProps(['nope'])).toEqual({});
-    expect(sanitizeTrackProps(null)).toEqual({});
+    expect(sanitizeTrackProps(['nope'], 'level_start')).toEqual({});
+    expect(sanitizeTrackProps(null, 'level_start')).toEqual({});
+  });
+
+  it('drops arbitrary gameplay data, incorrect types and missing event names', () => {
+    expect(sanitizeTrackProps({ level: '2', mode: 'main', coins: 900, player_state: '{}' }, 'level_start')).toEqual({ mode: 'main' });
+    expect(sanitizeTrackProps({ level: 2 })).toEqual({});
+    expect(sanitizeTrackProps({ used_items: ['hammer', 1] }, 'level_end')).toEqual({});
   });
 
   it('falls back to now when the client timestamp is unusable', () => {

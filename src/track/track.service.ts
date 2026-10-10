@@ -70,7 +70,7 @@ export class TrackService {
         eventTime: resolveEventTime(event.ts, now),
         platform,
         appVersion,
-        props: sanitizeTrackProps(event.props),
+        props: sanitizeTrackProps(event.props, event.name),
       });
     }
 
