@@ -1,23 +1,11 @@
-export const TRACK_EVENT_NAMES = [
-  'app_launch',
-  'loading_finish',
-  'page_view',
-  'level_enter_click',
-  'level_start',
-  'level_end',
-  'level_next',
-  'level_replay',
-  'level_home',
-  'level_go_build',
-  'tutorial_done',
-  'ad_entrance_show',
-  'ad_click',
-  'ad_result',
-  'building_light',
-  'shop_buy',
-] as const;
+// 事件允许集合由 cat-world/analytics/track-events.json 经
+// cat-world/scripts/generate_track_contract.js 生成（track-events.gen.ts），
+// 与客户端 TrackEventName 同源；这里只保留结构清洗逻辑，勿在此手改事件名。
+import { TRACK_EVENT_NAMES } from './track-events.gen';
+import type { TrackEventName } from './track-events.gen';
 
-export type TrackEventName = (typeof TRACK_EVENT_NAMES)[number];
+export { TRACK_EVENT_NAMES } from './track-events.gen';
+export type { TrackEventName } from './track-events.gen';
 
 const NAME_SET = new Set<string>(TRACK_EVENT_NAMES);
 const MAX_PROP_KEYS = 32;

@@ -52,7 +52,7 @@ curl -X POST http://localhost:3000/api/track \
   -d '{
     "user_id":"K7M2P9QX",
     "session_id":"sess_demo",
-    "platform":"preview",
+    "platform":"h5",
     "app_version":"1.0.0",
     "events":[
       {"event_id":"e1","name":"app_launch","ts":1758350000000,"props":{"is_new_user":true}},
@@ -63,6 +63,8 @@ curl -X POST http://localhost:3000/api/track \
 
 P0 事件名：`app_launch` `loading_finish` `page_view` `level_enter_click` `level_start` `level_end` `level_next` `level_replay` `level_home` `level_go_build` `tutorial_done` `ad_entrance_show` `ad_click` `ad_result` `building_light` `shop_buy`。
 
+`platform` 由客户端按构建目标写入：微信小游戏 `wechat`，H5 `h5`，编辑器预览 `preview`。看板用 `platform=wechat|h5|preview|all` 筛选。
+
 查询埋点看板（只读聚合，不返回玩家进度；默认最近 7 天，最长 31 天。若配置了 `DASHBOARD_TOKEN`，需带 `X-Dashboard-Token`）。可视化页面在仓库 `web/`：`cd web && npm install && npm run dev`，开发环境代理到本服务 `/api`。
 
 ```bash
@@ -71,6 +73,7 @@ curl 'http://localhost:3000/api/track/dashboard?from=2026-09-14&to=2026-09-20&pl
 
 # 也可分接口拉
 curl 'http://localhost:3000/api/track/overview?platform=wechat'
+curl 'http://localhost:3000/api/track/overview?platform=h5'
 curl 'http://localhost:3000/api/track/funnel?mode=main'
 curl 'http://localhost:3000/api/track/levels'
 curl 'http://localhost:3000/api/track/ads'

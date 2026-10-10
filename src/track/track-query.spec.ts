@@ -21,6 +21,12 @@ describe('track query helpers', () => {
     expect(range.mode).toBe('all');
   });
 
+  it('accepts wechat, h5 and preview platform filters', () => {
+    expect(resolveTrackQuery({ platform: 'wechat' }, now).platform).toBe('wechat');
+    expect(resolveTrackQuery({ platform: 'h5' }, now).platform).toBe('h5');
+    expect(resolveTrackQuery({ platform: 'preview' }, now).platform).toBe('preview');
+  });
+
   it('rejects a range longer than 31 days', () => {
     expect(() =>
       resolveTrackQuery({ from: '2026-08-01', to: '2026-09-20' }, now),

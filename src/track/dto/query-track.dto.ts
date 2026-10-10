@@ -10,8 +10,8 @@ export class QueryTrackDto {
   to?: string;
 
   @IsOptional()
-  @IsIn(['wechat', 'preview', 'all'])
-  platform?: 'wechat' | 'preview' | 'all';
+  @IsIn(['wechat', 'h5', 'preview', 'all'])
+  platform?: 'wechat' | 'h5' | 'preview' | 'all';
 
   @IsOptional()
   @IsIn(['main', 'challenge', 'endless', 'all'])

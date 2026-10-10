@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 export const TRACK_QUERY_MAX_DAYS = 31;
 
-export type TrackPlatformFilter = 'wechat' | 'preview' | 'all';
+export type TrackPlatformFilter = 'wechat' | 'h5' | 'preview' | 'all';
 export type TrackModeFilter = 'main' | 'challenge' | 'endless' | 'all';
 
 export interface TrackQueryInput {
@@ -61,7 +61,7 @@ export const FUNNEL_STEPS: FunnelStepDef[] = [
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const PLATFORMS = new Set<TrackPlatformFilter>(['wechat', 'preview', 'all']);
+const PLATFORMS = new Set<TrackPlatformFilter>(['wechat', 'h5', 'preview', 'all']);
 const MODES = new Set<TrackModeFilter>(['main', 'challenge', 'endless', 'all']);
 
 export function shanghaiYmd(now = new Date()): string {
@@ -219,7 +219,7 @@ function parseDay(value?: string): string | null {
 function parsePlatform(value?: string): TrackPlatformFilter {
   if (!value) return 'all';
   if (!PLATFORMS.has(value as TrackPlatformFilter)) {
-    throw new BadRequestException('platform 只能是 wechat、preview 或 all');
+    throw new BadRequestException('platform 只能是 wechat、h5、preview 或 all');
   }
   return value as TrackPlatformFilter;
 }
