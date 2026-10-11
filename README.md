@@ -104,7 +104,7 @@ curl 'http://localhost:3000/api/rank/list?type=3&date=2026-09-09&user_id=K7M2P9Q
 
 ## 2026-10-10 微信客户端与统计契约
 
-微信客户端仅使用埋点接口，不调用本服务历史 user/rank 接口，不同步存档；好友星星排行走微信开放数据域。历史接口保留兼容，以上调用示例不代表微信客户端需要接入。
+2026-10-11 按用户要求，客户端已接入 `/user/generate`、`/rank/submit` 和 `/rank/list`，预览、H5、微信统一展示关卡模式（type=1）、无尽模式（type=2）、超萌挑战（type=3）真实榜单。超萌挑战按上海自然日分榜。只提交三榜所需的成绩字段，金币、猫咪、道具及完整玩法存档仍保存在本机；埋点继续使用独立匿名统计 ID。
 
 事件目录 v2 由 `../cat-world/analytics/track-events.json` 同源生成，新增 `level_resume`、`cat_skill_use`，每日独立补给使用 `tool_supply_claim`。属性按逐事件字段和类型白名单清洗，未知字段不会写入。客户端与服务必须同步发布，否则旧服务会丢弃新增事件。
 
