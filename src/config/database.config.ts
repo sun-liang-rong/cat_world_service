@@ -14,5 +14,6 @@ export default registerAs(
     synchronize: process.env.DB_SYNC === 'true',
     timezone: '+08:00',
     charset: 'utf8mb4',
+    flags: ['-FOUND_ROWS'],
   }),
 );

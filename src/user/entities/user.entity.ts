@@ -17,6 +17,9 @@ export class User {
   @Column({ type: 'varchar', length: 16, unique: true })
   name: string;
 
+  @Column({ name: 'submit_token_hash', type: 'char', length: 64, nullable: true, select: false })
+  submitTokenHash: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt: Date;
 

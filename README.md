@@ -25,22 +25,29 @@ curl http://localhost:3000/api/health
 curl -X POST http://localhost:3000/api/user/generate
 ```
 
+响应 `data` 包含 `user_id`、`name`、`submit_token`。`submit_token` 是 32 字节随机值的 64 位十六进制编码，仅在创建时返回，客户端独立保存在本机。服务器只保存 SHA256，不支持凭公开用户 ID 认领、查询或补发凭证。昵称在中文基础名后追加匿名 ID，不再受 776 个基础名字的数量限制。
+
+提交成绩须带 `Authorization: Bearer <submit_token>`，凭证只能提交对应 `user_id` 的成绩；读排行榜不需要凭证。以下示例中的占位 ID 和凭证须替换为同一次创建响应中的实际值，勿把正式凭证写入日志或公开文档。
+
 提交排行榜成绩：
 
 ```bash
 # 关卡榜 type=1
 curl -X POST http://localhost:3000/api/rank/submit \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <submit_token>' \
   -d '{"user_id":"K7M2P9QX","type":1,"level_count":12,"star_count":36}'
 
 # 无尽榜 type=2
 curl -X POST http://localhost:3000/api/rank/submit \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <submit_token>' \
   -d '{"user_id":"K7M2P9QX","type":2,"clear_count":128,"duration_ms":180000}'
 
 # 超萌挑战榜 type=3，按日期存当天最好成绩
 curl -X POST http://localhost:3000/api/rank/submit \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <submit_token>' \
   -d '{"user_id":"K7M2P9QX","type":3,"date":"2026-09-09","duration_ms":92000}'
 ```
 
@@ -97,10 +104,21 @@ curl 'http://localhost:3000/api/rank/list?type=3&date=2026-09-09&user_id=K7M2P9Q
 - 库名：`cat_world`
 - 表前缀：`cat_world_`
 - 用户表：`cat_world_user`（主键、用户 ID、名称）
+- 用户提交凭证：`submit_token_hash CHAR(64) NULL`，默认查询不取此列；旧身份迁移后为 NULL。
 - 排行榜表：`cat_world_rank`（用户 ID + 榜单类型 + 日期唯一；关卡/无尽日期为空，超萌挑战按天存）
 - 埋点表：`cat_world_track_event`（按 `event_id` 去重；只存分析事件，不存玩家进度）
 - 连接信息写在 `.env`（参考 `.env.example`）
 - 开发期 `DB_SYNC=true`，后续有表结构后再关掉
+
+## 2026-10-14 排行榜缺陷修复与发布顺序
+
+部署前先在已有数据库执行 `npm run migration:run`，新增 nullable `submit_token_hash`。本次只提供迁移文件，未执行线上迁移或部署。迁移不改动已有榜单、用户或玩家本机存档；凭证列已经由开发环境同步创建时，迁移会跳过重复添加。
+
+旧客户端仅持有公开 ID，没有可验证凭证，不能安全继续写入该身份。新客户端发现凭证缺失时创建新匿名身份，再按原规则补报本机保存的成绩；金币、猫咪、关卡和所有本机存档保持不变。旧榜单记录仍保留，可能暂时出现同一设备的新旧匿名记录，不做无法证明归属的合并。先迁移数据库，再发布后端与支持 Bearer 凭证的客户端；后端发布后旧客户端提交会收到 401，但仍可读榜。
+
+前 50 名的 raw JOIN 查询使用 SQL `LIMIT 50`。成绩更新由 MySQL 原子 upsert 完成：先依据旧主分数决定配对字段，再单调更新主分数，无尽消除数和有效时间来自同一局。三榜相同或较差成绩不更新 `updated_at`；连接显式关闭 `FOUND_ROWS`，`updated=false` 对应真实未改变。超萌挑战仍允许携带历史实际日期补报，以便离线队列跨日重试。
+
+回归覆盖真实 TypeORM SQL 生成、逐条 SQL 赋值语义、凭证拒绝、超萌挑战跨日补报、超过 776 个身份创建、唯一键并发碰撞重试及迁移兼容。需要 Node.js 20 或更新版本运行 Nest 11/Jest 30（推荐 Node.js 24）。本机未配置隔离 MySQL，上线前还需在 MySQL 8 验证真实 upsert 受影响行数、并发及迁移；单测不会连接生产数据库。
 
 ## 2026-10-10 微信客户端与统计契约
 

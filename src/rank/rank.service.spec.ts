@@ -1,6 +1,9 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { RankService } from './rank.service';
 import { RankType } from './rank-type';
+import { hashSubmitToken } from '../user/submit-token';
+
+const SUBMIT_TOKEN = 'a'.repeat(64);
 
 interface RankRecordLike {
   userId: string;
@@ -15,7 +18,7 @@ interface RankRecordLike {
 }
 
 interface CapturedCalls {
-  take?: number;
+  limit?: number;
   sql: string[];
   params: unknown[][];
 }
@@ -24,12 +27,12 @@ interface CapturedCalls {
 function createRepos(options: {
   topRows?: Record<string, unknown>[];
   record?: RankRecordLike | null;
-  user?: { userId: string; name: string } | null;
+  user?: { userId: string; name: string; submitTokenHash?: string | null } | null;
   upsertAffectedRows?: number;
   ahead?: number;
 }) {
   const captured: CapturedCalls = { sql: [], params: [] };
-  let takeLimit: number | null = null;
+  let queryLimit: number | null = null;
   const builder = {
     innerJoin() {
       return builder;
@@ -49,15 +52,14 @@ function createRepos(options: {
     addOrderBy() {
       return builder;
     },
-    take(limit: number) {
-      captured.take = limit;
-      takeLimit = limit;
+    limit(limit: number) {
+      captured.limit = limit;
+      queryLimit = limit;
       return builder;
     },
     async getRawMany() {
-      // 与真实数据库的 LIMIT 行为一致：take(50) 后只返回前 50 行
       const rows = options.topRows ?? [];
-      return takeLimit === null ? rows : rows.slice(0, takeLimit);
+      return queryLimit === null ? rows : rows.slice(0, queryLimit);
     },
   };
   const ranks = {
@@ -74,6 +76,10 @@ function createRepos(options: {
   };
   const users = {
     findOneBy: async () => options.user ?? null,
+    findOne: async () => options.user ? {
+      submitTokenHash: hashSubmitToken(SUBMIT_TOKEN),
+      ...options.user,
+    } : null,
   };
   return {
     service: new RankService(ranks as never, users as never),
@@ -114,7 +120,7 @@ describe('RankService.list', () => {
 
     const entries = await service.list({ type: RankType.Level });
 
-    expect(captured.take).toBe(50);
+    expect(captured.limit).toBe(50);
     expect(entries).toHaveLength(50);
     expect(entries[0]).toMatchObject({ rank: 1, user_id: 'u-1' });
     expect(entries[49].rank).toBe(50);
@@ -185,7 +191,7 @@ describe('RankService.submit', () => {
       ahead: 9,
     });
 
-    const result = await service.submit(dto);
+    const result = await service.submit(dto, SUBMIT_TOKEN);
 
     expect(result.updated).toBe(true);
     expect(result.record.rank).toBe(10);
@@ -201,7 +207,7 @@ describe('RankService.submit', () => {
       ahead: 0,
     });
 
-    const result = await service.submit({ ...dto, star_count: 1 });
+    const result = await service.submit({ ...dto, star_count: 1 }, SUBMIT_TOKEN);
 
     expect(result.updated).toBe(false);
   });
@@ -214,14 +220,14 @@ describe('RankService.submit', () => {
       ahead: 0,
     });
 
-    const result = await service.submit({ ...dto, star_count: 999 });
+    const result = await service.submit({ ...dto, star_count: 999 }, SUBMIT_TOKEN);
 
     expect(result.updated).toBe(true);
   });
 
   it('用户不存在 → 404', async () => {
     const { service } = createRepos({ user: null });
-    await expect(service.submit(dto)).rejects.toThrow(NotFoundException);
+    await expect(service.submit(dto, SUBMIT_TOKEN)).rejects.toThrow(NotFoundException);
   });
 
   it('无尽榜 upsert 条件按 clear_count/duration_ms 规则拼装', async () => {
@@ -237,10 +243,34 @@ describe('RankService.submit', () => {
       type: RankType.Endless,
       clear_count: 30,
       duration_ms: 90_000,
-    });
+    }, SUBMIT_TOKEN);
 
     expect(result.updated).toBe(true);
     expect(captured.sql[0]).toContain('VALUES(clear_count) > clear_count');
     expect(captured.sql[0]).toContain('VALUES(duration_ms) < duration_ms');
+  });
+
+  it.each([
+    ['缺失凭证', '', hashSubmitToken(SUBMIT_TOKEN)],
+    ['格式错误', 'public-user-id', hashSubmitToken(SUBMIT_TOKEN)],
+    ['冒用他人凭证', 'b'.repeat(64), hashSubmitToken(SUBMIT_TOKEN)],
+    ['旧身份无凭证', SUBMIT_TOKEN, null],
+  ])('%s 不允许写成绩', async (_label, token, hash) => {
+    const { service, captured } = createRepos({
+      user: { userId: 'u-1', name: '玩家1', submitTokenHash: hash },
+    });
+    await expect(service.submit(dto, token!)).rejects.toThrow(UnauthorizedException);
+    expect(captured.sql).toHaveLength(0);
+  });
+
+  it('支持跨日补报超萌挑战队列中的实际日期', async () => {
+    const { service, captured } = createRepos({
+      user: { userId: 'u-1', name: '玩家1' },
+      upsertAffectedRows: 1,
+      record: record({ userId: 'u-1', type: RankType.Challenge, rankDate: '2026-10-10', durationMs: 90_000 }),
+    });
+    const result = await service.submit({ user_id: 'u-1', type: RankType.Challenge, date: '2026-10-10', duration_ms: 90_000 }, SUBMIT_TOKEN);
+    expect(captured.params[0][2]).toBe('2026-10-10');
+    expect(result.record.date).toBe('2026-10-10');
   });
 });

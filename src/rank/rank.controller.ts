@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
 import { QueryRankDto } from './dto/query-rank.dto';
 import { SubmitRankDto } from './dto/submit-rank.dto';
 import { RankEntry, RankService, SubmitRankResult } from './rank.service';
@@ -8,8 +8,12 @@ export class RankController {
   constructor(private readonly rankService: RankService) {}
 
   @Post('submit')
-  submit(@Body() dto: SubmitRankDto): Promise<SubmitRankResult> {
-    return this.rankService.submit(dto);
+  submit(
+    @Body() dto: SubmitRankDto,
+    @Headers('authorization') authorization?: string,
+  ): Promise<SubmitRankResult> {
+    const token = /^Bearer\s+(\S+)$/i.exec(authorization?.trim() ?? '')?.[1] ?? '';
+    return this.rankService.submit(dto, token);
   }
 
   @Get('list')

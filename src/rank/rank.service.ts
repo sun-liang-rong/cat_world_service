@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { User } from '../user/entities/user.entity';
+import { verifySubmitToken } from '../user/submit-token';
 import { QueryRankDto } from './dto/query-rank.dto';
 import { SubmitRankDto } from './dto/submit-rank.dto';
 import { Rank } from './entities/rank.entity';
@@ -71,27 +73,34 @@ export class RankService {
     private readonly users: Repository<User>,
   ) {}
 
-  async submit(dto: SubmitRankDto): Promise<SubmitRankResult> {
-    const user = await this.users.findOneBy({ userId: dto.user_id });
+  async submit(dto: SubmitRankDto, submitToken = ''): Promise<SubmitRankResult> {
+    if (!submitToken) {
+      throw new UnauthorizedException('排行榜提交凭证缺失');
+    }
+    const user = await this.users.findOne({
+      where: { userId: dto.user_id },
+      select: { userId: true, name: true, submitTokenHash: true },
+    });
     if (!user) {
       throw new NotFoundException('用户不存在');
+    }
+    if (!verifySubmitToken(submitToken, user.submitTokenHash)) {
+      throw new UnauthorizedException('排行榜提交凭证无效');
     }
 
     const rankDate = this.resolveSubmitDate(dto);
     const payload = this.normalizeScore(dto);
 
     // 原子 upsert：affectedRows 1 = 新插入，2 = 条件命中更新，0 = 未变化。
-    // IF 条件与 isBetter() 的三榜规则完全一致，不会用较差成绩覆盖最好成绩；
+    // 连接禁用 FOUND_ROWS，避免无变化时 affectedRows=1 冒充插入。
+    // 按模式先判断旧主分数更新配对字段，最后单调更新主分数，避免跨局拼接成绩。
     // 未命中时列值保持不变，updated_at 上的 ON UPDATE 不会触发。
     const affected = await this.ranks.query(
       `INSERT INTO cat_world_rank
         (user_id, type, rank_date, level_count, star_count, clear_count, duration_ms)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-        level_count = IF(${this.betterCondition(dto.type)}, VALUES(level_count), level_count),
-        star_count = IF(${this.betterCondition(dto.type)}, VALUES(star_count), star_count),
-        clear_count = IF(${this.betterCondition(dto.type)}, VALUES(clear_count), clear_count),
-        duration_ms = IF(${this.betterCondition(dto.type)}, VALUES(duration_ms), duration_ms)`,
+        ${this.scoreUpdateAssignments(dto.type)}`,
       [
         dto.user_id,
         dto.type,
@@ -150,7 +159,7 @@ export class RankService {
   /** 前 50 名：LIMIT 50 的有界查询，禁止 getRawMany() 拉取整榜。 */
   private async topEntries(type: RankType, rankDate: string): Promise<RankEntry[]> {
     const rows = await this.orderedQuery(type, rankDate)
-      .take(LIST_LIMIT)
+      .limit(LIST_LIMIT)
       .getRawMany<RankRow>();
     return rows.map((row, index) => this.toEntry(row, index + 1));
   }
@@ -215,15 +224,17 @@ export class RankService {
     ];
   }
 
-  /** 与 isBetter() 一致的 ODKU 条件表达式。 */
-  private betterCondition(type: RankType): string {
+  /** MySQL 赋值按顺序执行：条件只在改动主分数之前计算一次。 */
+  private scoreUpdateAssignments(type: RankType): string {
     if (type === RankType.Level) {
-      return '(VALUES(star_count) > star_count OR (VALUES(star_count) = star_count AND VALUES(level_count) > level_count))';
+      return `level_count = IF(VALUES(star_count) > star_count OR (VALUES(star_count) = star_count AND VALUES(level_count) > level_count), VALUES(level_count), level_count),
+        star_count = GREATEST(star_count, VALUES(star_count))`;
     }
     if (type === RankType.Endless) {
-      return '(VALUES(clear_count) > clear_count OR (VALUES(clear_count) = clear_count AND VALUES(duration_ms) < duration_ms))';
+      return `duration_ms = IF(VALUES(clear_count) > clear_count OR (VALUES(clear_count) = clear_count AND VALUES(duration_ms) < duration_ms), VALUES(duration_ms), duration_ms),
+        clear_count = GREATEST(clear_count, VALUES(clear_count))`;
     }
-    return 'VALUES(duration_ms) < duration_ms';
+    return 'duration_ms = LEAST(duration_ms, VALUES(duration_ms))';
   }
 
   private async buildEntry(record: Rank, name: string): Promise<RankEntry> {

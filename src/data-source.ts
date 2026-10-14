@@ -19,6 +19,7 @@ export default new DataSource({
   database: process.env.DB_NAME,
   timezone: '+08:00',
   charset: 'utf8mb4',
+  flags: ['-FOUND_ROWS'],
   entities: [User, Rank, TrackEvent],
   migrations: [__dirname + '/migrations/*{.ts,.js}'],
   logging: false,

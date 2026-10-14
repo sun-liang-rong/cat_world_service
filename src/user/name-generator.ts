@@ -42,6 +42,11 @@ export class NameGenerator {
     return this.pool.length;
   }
 
+  pickForUser(userId: string): string {
+    // 基础名最多 7 字，分隔符 + 8 位 ID 后总长度不超过用户表的 16 字。
+    return `${this.pick().slice(0, 7)}·${userId}`;
+  }
+
   pick(exclude: Set<string> = new Set()): string {
     for (let i = 0; i < 24; i += 1) {
       const name = this.pool[Math.floor(Math.random() * this.pool.length)];

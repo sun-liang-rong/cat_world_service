@@ -5,12 +5,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
+import { randomInt } from 'node:crypto';
 import { User } from './entities/user.entity';
 import { NameGenerator } from './name-generator';
+import { createSubmitToken } from './submit-token';
 
 export interface GeneratedUser {
   name: string;
   user_id: string;
+  submit_token: string;
 }
 
 const MAX_ATTEMPTS = 80;
@@ -27,35 +30,22 @@ export class UserService {
   ) {}
 
   async generate(): Promise<GeneratedUser> {
-    const triedNames = new Set<string>();
     const triedIds = new Set<string>();
 
     for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
-      let name: string;
-      try {
-        name = this.names.pick(triedNames);
-      } catch {
-        break;
-      }
       const userId = this.pickUserId(triedIds);
-
-      const nameTaken = await this.users.existsBy({ name });
-      if (nameTaken) {
-        continue;
-      }
-
-      const idTaken = await this.users.existsBy({ userId });
-      if (idTaken) {
-        continue;
-      }
+      // 昵称带唯一匿名 ID 后缀，不受基础名字池容量限制；并发碰撞交给唯一键重试。
+      const name = this.names.pickForUser(userId);
+      const credential = createSubmitToken();
 
       try {
         const saved = await this.users.save(
-          this.users.create({ name, userId }),
+          this.users.create({ name, userId, submitTokenHash: credential.hash }),
         );
         return {
           name: saved.name,
           user_id: saved.userId,
+          submit_token: credential.token,
         };
       } catch (error) {
         if (isDuplicateKey(error)) {
@@ -86,7 +76,7 @@ export class UserService {
 function randomUserId(): string {
   let value = '';
   for (let i = 0; i < 8; i += 1) {
-    value += USER_ID_CHARS[Math.floor(Math.random() * USER_ID_CHARS.length)];
+    value += USER_ID_CHARS[randomInt(USER_ID_CHARS.length)];
   }
   return value;
 }
